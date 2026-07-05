@@ -1,0 +1,57 @@
+{
+  "name": "chat-adapter-zaileys",
+  "description": "WhatsApp adapter for Chat SDK powered by zaileys — rich media, native buttons/cards, real message history, polls, and scheduling",
+  "version": "0.1.0",
+  "license": "MIT",
+  "type": "module",
+  "author": "zaadevofc",
+  "homepage": "https://zeative.github.io/zaileys/",
+  "repository": {
+    "url": "git+https://github.com/zeative/chat-adapter-zaileys.git"
+  },
+  "bugs": {
+    "url": "https://github.com/zeative/chat-adapter-zaileys/issues"
+  },
+  "keywords": [
+    "chat-sdk",
+    "chat-adapter",
+    "whatsapp",
+    "zaileys",
+    "baileys",
+    "whatsapp-bot",
+    "ai-agent"
+  ],
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "tsup"
+  },
+  "peerDependencies": {
+    "chat": ">=4.30.0",
+    "zaileys": ">=4.7.0"
+  },
+  "dependencies": {
+    "@chat-adapter/shared": "^4.30.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "chat": "^4.32.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.7",
+    "zaileys": "^4.7.0"
+  }
+}
