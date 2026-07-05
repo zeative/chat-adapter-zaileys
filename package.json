@@ -5,7 +5,7 @@
   "license": "MIT",
   "type": "module",
   "author": "zaadevofc",
-  "homepage": "https://zeative.github.io/zaileys/",
+  "homepage": "https://zeative.github.io/chat-adapter-zaileys/",
   "repository": {
     "url": "git+https://github.com/zeative/chat-adapter-zaileys.git"
   },

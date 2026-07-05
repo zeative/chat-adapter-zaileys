@@ -249,7 +249,8 @@ Scheduled jobs persist in the Zaileys store and survive restarts (with a durable
 
 ## Documentation
 
-- 🌐 [**zeative.github.io/zaileys**](https://zeative.github.io/zaileys/) — full Zaileys documentation: guides, API reference, recipes
+- 🌐 [**zeative.github.io/chat-adapter-zaileys**](https://zeative.github.io/chat-adapter-zaileys/) — full adapter documentation: guides, events, payload, extensions
+- ⚙️ [**zeative.github.io/zaileys**](https://zeative.github.io/zaileys/) — Zaileys documentation: the engine's guides, API reference, recipes
 - 💬 [**chat-sdk.dev**](https://chat-sdk.dev) — Chat SDK documentation
 - 📦 [**zaileys**](https://github.com/zeative/zaileys) — the engine underneath this adapter
 
