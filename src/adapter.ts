@@ -898,9 +898,14 @@ export class ZaileysAdapter implements Adapter<ZaileysThreadId, ZaileysRaw> {
   }
 
   /** Send a quoted reply — WhatsApp's native reply bubble. */
-  async reply(message: Message<ZaileysRaw>, content: AdapterPostableMessage): Promise<RawMessage<ZaileysRaw>> {
+  async reply(
+    message: Message<ZaileysRaw> | Message<unknown>,
+    content: AdapterPostableMessage,
+  ): Promise<RawMessage<ZaileysRaw>> {
+    const raw = message.raw as ZaileysRaw | undefined
+    const key = raw?.key ?? { remoteJid: this.decodeThreadId(message.threadId).jid, id: message.id, fromMe: false }
     const { jid } = this.decodeThreadId(message.threadId)
-    return this.sendPostable(jid, message.threadId, content, message.raw.key)
+    return this.sendPostable(jid, message.threadId, content, key)
   }
 
   /** Mark the chat as read (blue ticks). */
