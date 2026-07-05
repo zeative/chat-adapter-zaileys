@@ -1,0 +1,74 @@
+---
+description: "How Zaileys events map to Chat SDK handlers — messages, reactions, button clicks, poll votes, group joins, slash commands, and the typed passthrough for everything else."
+---
+
+import { Callout } from 'nextra/components'
+
+# Events & Handlers
+
+The adapter wires Zaileys events into the standard Chat SDK handlers. Whatever has a native SDK concept arrives there; everything else stays reachable — fully typed — through `adapter.client.on(…)`.
+
+## Wired to Chat SDK handlers
+
+| Zaileys event | Chat SDK handler | Notes |
+| --- | --- | --- |
+| `message` (all types) | `onNewMention` / `onSubscribedMessage` / `onDirectMessage` | Full [`MessageContext`](/payload) attached as `message.raw.context`. Stories and newsletters are skipped. |
+| `reaction` | `onReaction` | `added` reflects add vs. remove; emoji normalized to an `EmojiValue`. |
+| `button-click` | `onAction` | Native button taps — see [Cards & Buttons](/cards-buttons). |
+| `list-select` | `onAction` | List row selections use the same action decoding. |
+| `poll-vote` | `onPollVote` (adapter) + message handlers | Decrypted natively — see [Polls](/polls). |
+| `group-join` | `onMemberJoinedChannel` | One event per joined participant, with `inviterId` when known. |
+| prefixed message (`/cmd`) | `onSlashCommand` | Opt-in via [`slashCommands: true`](/configuration#options). |
+
+```typescript
+bot.onReaction('🔥', async (event) => {
+  await event.thread.post(`${event.user.userName} reacted with fire!`)
+})
+
+bot.onMemberJoinedChannel(async (event) => {
+  const thread = await bot.getThread(event.channelId)
+  await thread.post(`Welcome <@${event.userId}>!`)
+})
+```
+
+## Slash commands
+
+With `slashCommands: true`, messages starting with a Zaileys command prefix are routed to `onSlashCommand` **instead of** message handlers — mirroring how Slack separates slash commands from messages:
+
+```typescript
+const whatsapp = createZaileysAdapter({
+  session: { sessionId: 'main', commandPrefix: ['/', '!'] },
+  slashCommands: true,
+})
+
+bot.onSlashCommand('/deploy', async (event) => {
+  await event.channel.post(`Deploying ${event.text}…`) // "/deploy prod" → text = "prod"
+})
+```
+
+The command is normalized to `/name` regardless of which prefix triggered it.
+
+## Message-author semantics
+
+- `author.isMe` — `true` for messages sent by the paired account (`fromMe`) or tracked as sent by this adapter instance.
+- `author.isBot` — `true` for adapter-sent messages, otherwise Zaileys' bot detection (`ctx.isBot`).
+- `message.isMention` — set when the bot is @-tagged (`ctx.isTagMe`), in addition to the SDK's own username matching.
+
+## Everything else: typed passthrough
+
+Zaileys emits 20+ event types. Those without a Chat SDK equivalent — calls, presence, group updates, edits, deletions, history sync — are one line away, fully typed:
+
+```typescript
+whatsapp.client.on('call-incoming', (call) => console.log('incoming call from', call.from))
+whatsapp.client.on('group-update', (u) => console.log('group changed:', u.update))
+whatsapp.client.on('delete', (d) => console.log('message deleted:', d.key.id))
+whatsapp.client.on('presence', (p) => console.log(p))
+```
+
+<Callout type="info">
+See [Zaileys → Events](https://zeative.github.io/zaileys/events) for every event and payload shape.
+</Callout>
+
+## Concurrency & locking
+
+The adapter declares `lockScope: 'channel'` — WhatsApp conversations are flat, so all messages in a chat contend for the same lock. Combine with the SDK's `concurrency` strategies (`queue`, `debounce`, `burst`) as usual; media attachments survive serialization thanks to [`rehydrateAttachment`](/history#media-rehydration).

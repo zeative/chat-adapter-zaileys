@@ -1,0 +1,89 @@
+---
+description: "Every chat-adapter-zaileys option — factory, adapterName, multi-account, richMessages, slashCommands, autoMarkRead, and logger."
+---
+
+import { Callout } from 'nextra/components'
+
+# Configuration
+
+## Factory
+
+```typescript
+import { createZaileysAdapter } from 'chat-adapter-zaileys'
+
+const whatsapp = createZaileysAdapter({
+  session: { sessionId: 'main' },   // or: client: myZaileysClient
+  adapterName: 'zaileys',
+  userName: 'zaileys-bot',
+  forwardPollVotes: true,
+  autoMarkRead: false,
+  richMessages: false,
+  slashCommands: false,
+})
+```
+
+## Options
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `client` | `Client` | — | An existing Zaileys client. Mutually exclusive with `session`. |
+| `session` | `ClientOptions` | `{}` | Zaileys [`ClientOptions`](https://zeative.github.io/zaileys/configuration) used to construct a client (sessionId, authType, phoneNumber, auth/store adapters, plugins, …). |
+| `adapterName` | `string` | `"zaileys"` | Adapter identity and thread-ID prefix (`name:encodedJid`). Must not contain `:`. |
+| `userName` | `string` | `"zaileys-bot"` | Bot display name used by the Chat SDK. |
+| `logger` | `Logger` | Chat SDK logger | Logger override. |
+| `forwardPollVotes` | `boolean` | `true` | Also deliver poll votes to `processMessage` with the selected options as text — so `onSubscribedMessage` sees them. |
+| `autoMarkRead` | `boolean` | `false` | Send read receipts (blue ticks) for every inbound message automatically. |
+| `richMessages` | `boolean` | `false` | Render `{ markdown }` / `{ ast }` posts through Zaileys [AIRich](https://zeative.github.io/zaileys/rich-responses) — Meta-AI-style bubbles with highlighted code and tables — instead of plain WhatsApp markup. |
+| `slashCommands` | `boolean` | `false` | Route prefixed messages (`/cmd args`) to `chat.onSlashCommand` instead of message handlers. Prefixes come from the Zaileys client's `commandPrefix`. |
+
+## Multi-account
+
+Run several WhatsApp accounts in one `Chat` instance by giving each adapter a unique `adapterName` (it prefixes every thread ID):
+
+```typescript
+const main = createZaileysAdapter({
+  session: { sessionId: 'main' },
+  adapterName: 'wa-main',
+})
+const sales = createZaileysAdapter({
+  session: { sessionId: 'sales' },
+  adapterName: 'wa-sales',
+})
+
+const bot = new Chat({
+  userName: 'mybot',
+  adapters: { main, sales },
+  state: memoryState(),
+})
+
+await bot.initialize()
+await Promise.all([main.connect(), sales.connect()])
+```
+
+<Callout type="warning">
+Thread IDs embed the `adapterName`. Changing it invalidates previously stored thread IDs (subscriptions, scheduled context) — pick a name once and keep it.
+</Callout>
+
+## Thread IDs
+
+Thread IDs are `"<adapterName>:<base64url(jid)>"`. DMs and groups are both a single flat conversation — the thread **is** the channel, so `channelIdFromThreadId` returns the thread ID itself and the lock scope is `channel`.
+
+```typescript
+adapter.encodeThreadId({ jid: '628123456789@s.whatsapp.net' }) // "zaileys:NjI4MTIzNDU2Nzg5QHMud2hhdHNhcHAubmV0"
+adapter.decodeThreadId(threadId)                               // { jid: "628123456789@s.whatsapp.net" }
+adapter.isDM(threadId)                                         // true for DMs, false for groups/newsletters
+adapter.openDM('6281234567890')                                // → DM thread ID (accepts digits or a jid)
+```
+
+## Accessing the Zaileys client
+
+The full Zaileys `Client` is always one hop away:
+
+```typescript
+whatsapp.client.group.metadata(jid)
+whatsapp.client.privacy.updateLastSeen('contacts')
+whatsapp.client.broadcast(jids, (b) => b.text('Announcement'))
+whatsapp.client.on('call-incoming', (call) => { /* … */ })
+```
+
+See the [Zaileys docs](https://zeative.github.io/zaileys/) for the complete client surface.

@@ -1,0 +1,41 @@
+# chat-adapter-zaileys
+
+> WhatsApp adapter for Chat SDK (chat-sdk.dev), powered by Zaileys. Plugs WhatsApp into the Chat SDK multi-platform bot framework with real message history, native buttons from Cards, natively decrypted poll votes, scheduled messages, and rich media — QR/pairing auth, reconnection, and session persistence handled by Zaileys.
+
+Key facts:
+
+- Package: `chat-adapter-zaileys` on npm. Peer dependencies: `chat` (Chat SDK) >= 4.30 and `zaileys` >= 4.7. No direct Baileys dependency. Node.js 20+, ESM.
+- Create with `createZaileysAdapter({ session: { sessionId: 'main' } })` or bring your own Zaileys `Client` via `{ client }`. Register Chat SDK handlers first, then `await adapter.connect()`.
+- Thread IDs: `"<adapterName>:<base64url(jid)>"`. Lock scope is `channel`. `handleWebhook` returns 501 — WhatsApp uses a persistent WebSocket, not webhooks.
+- `thread.fetchMessages` returns REAL history backed by the Zaileys message store (memory/SQLite/Postgres/Redis/Convex); backward cursor pagination by timestamp.
+- Chat SDK Cards render as native WhatsApp buttons; taps arrive in `chat.onAction` with `actionId` and `value`. 256-char button-id limit validated at post time.
+- Poll votes are decrypted natively by Zaileys (no messageSecret bookkeeping): `wa.sendPoll(...)` + `wa.onPollVote(handler)`; also forwarded to message handlers by default.
+- `thread.schedule(text, { postAt })` works natively (persisted via the Zaileys scheduler; restart-safe with a durable store).
+- `zaileysContext(message)` returns the full Zaileys MessageContext (20+ flags, lazy media, `replied()`, `reply()`, `react()`) or null for history/sent messages.
+- Extensions on the adapter: reply (quoted bubble), markRead, setPresence, startTyping, startRecording, setDisappearing, sendLocation, sendPoll, sendSticker (Lottie supported), sendVoiceNote, sendContact, forwardMessage, pinMessage/unpinMessage, fetchGroupParticipants, getUser, openDM.
+- Escape hatches: `adapter.native(threadId)` = the entire Zaileys message builder (albums, carousels, lists, view-once, mentions, disappearing); `adapter.client` = the full Zaileys Client (groups, communities, newsletters, privacy, business, broadcast, plugins).
+- Config options: adapterName, userName, logger, forwardPollVotes (default true), autoMarkRead (default false), richMessages (markdown → Zaileys AIRich bubbles, default false), slashCommands (prefix messages → onSlashCommand, default false).
+- Unofficial WhatsApp API (via Zaileys/Baileys) — accounts risk suspension under WhatsApp ToS; use responsibly.
+
+## Docs
+
+- [Introduction](https://zeative.github.io/chat-adapter-zaileys/): Overview, comparison, three-layer architecture
+- [Getting Started](https://zeative.github.io/chat-adapter-zaileys/getting-started/): Install, QR/pairing auth, first bot
+- [Configuration](https://zeative.github.io/chat-adapter-zaileys/configuration/): Every option, multi-account, thread IDs
+- [Events & Handlers](https://zeative.github.io/chat-adapter-zaileys/events/): Zaileys → Chat SDK event wiring, slash commands, typed passthrough
+- [Message Payload](https://zeative.github.io/chat-adapter-zaileys/payload/): zaileysContext(), raw shape, field mapping, lazy media
+- [Posting Messages](https://zeative.github.io/chat-adapter-zaileys/messages/): Text, markdown, files, AIRich, streaming, edit/delete/react
+- [Cards & Buttons](https://zeative.github.io/chat-adapter-zaileys/cards-buttons/): Native buttons with onAction round-trips
+- [Message History](https://zeative.github.io/chat-adapter-zaileys/history/): Real fetchMessages, stores, media rehydration
+- [Polls](https://zeative.github.io/chat-adapter-zaileys/polls/): Native polls with decrypted votes
+- [Scheduling](https://zeative.github.io/chat-adapter-zaileys/scheduling/): thread.schedule on WhatsApp
+- [Extensions & native()](https://zeative.github.io/chat-adapter-zaileys/extensions/): All WhatsApp-native extensions and escape hatches
+- [Troubleshooting & FAQ](https://zeative.github.io/chat-adapter-zaileys/troubleshooting/): Limits, pitfalls, account safety
+
+## Optional
+
+- [Full docs dump](https://zeative.github.io/chat-adapter-zaileys/llms-full.txt): All pages concatenated as markdown
+- [Zaileys documentation](https://zeative.github.io/zaileys/): The underlying WhatsApp client
+- [Chat SDK documentation](https://chat-sdk.dev): The multi-platform bot framework
+- [GitHub](https://github.com/zeative/chat-adapter-zaileys)
+- [npm](https://www.npmjs.com/package/chat-adapter-zaileys)
