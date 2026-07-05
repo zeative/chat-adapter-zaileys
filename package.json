@@ -1,7 +1,7 @@
 {
   "name": "chat-adapter-zaileys",
   "description": "WhatsApp adapter for Chat SDK powered by zaileys — rich media, native buttons/cards, real message history, polls, and scheduling",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "MIT",
   "type": "module",
   "author": "zaadevofc",

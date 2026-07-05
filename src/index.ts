@@ -1,7 +1,7 @@
 export { ZaileysAdapter } from './adapter.js'
 export { ZaileysFormatConverter } from './format-converter.js'
 export { createZaileysAdapter, type CreateZaileysAdapterOptions } from './factory.js'
-export { isZaileysAdapter, requireZaileysAdapter } from './guards.js'
+export { isZaileysAdapter, requireZaileysAdapter, zaileysContext } from './guards.js'
 export type {
   ZaileysAdapterConfig,
   ZaileysGroupParticipant,

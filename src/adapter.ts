@@ -1,6 +1,7 @@
 import {
   Message,
   defaultEmojiResolver,
+  stringifyMarkdown,
   type Adapter,
   type AdapterPostableMessage,
   type Attachment,
@@ -193,6 +194,29 @@ export class ZaileysAdapter implements Adapter<ZaileysThreadId, ZaileysRaw> {
       if (this._config.autoMarkRead === true && !ctx.isFromMe) {
         void this._client.chat.markRead(jid).catch(() => {})
       }
+      if (this._config.slashCommands === true && ctx.isPrefix && !ctx.isFromMe) {
+        const body = ctx.text.trim()
+        const spaceIdx = body.indexOf(' ')
+        const commandWord = (spaceIdx === -1 ? body : body.slice(0, spaceIdx)).slice(1)
+        chat.processSlashCommand(
+          {
+            adapter: this,
+            channelId: threadId,
+            command: `/${commandWord}`,
+            text: spaceIdx === -1 ? '' : body.slice(spaceIdx + 1).trim(),
+            raw: ctx,
+            user: {
+              userId: ctx.senderId,
+              userName: ctx.senderId.split('@')[0] ?? ctx.senderId,
+              fullName: ctx.senderName ?? '',
+              isBot: ctx.isBot,
+              isMe: false,
+            },
+          },
+          undefined,
+        )
+        return
+      }
       void chat.processMessage(this, threadId, () =>
         Promise.resolve(this.parseMessage({ key: this.keyOf(ctx), context: ctx, message: ctx.message() })),
       )
@@ -260,6 +284,23 @@ export class ZaileysAdapter implements Adapter<ZaileysThreadId, ZaileysRaw> {
 
     client.on('poll-vote', (payload) => {
       void this.dispatchPollVote(payload).catch((err) => this._logger.warn(`poll-vote dispatch failed: ${String(err)}`))
+    })
+
+    client.on('group-join', (payload) => {
+      const chat = this._chat
+      if (!chat) return
+      const channelId = this.encodeThreadId({ jid: payload.groupId })
+      for (const participant of payload.participants) {
+        chat.processMemberJoinedChannel(
+          {
+            adapter: this,
+            channelId,
+            userId: participant.authorPn ?? participant.jid,
+            ...(payload.by !== undefined ? { inviterId: payload.by } : {}),
+          },
+          undefined,
+        )
+      }
     })
   }
 
@@ -470,7 +511,12 @@ export class ZaileysAdapter implements Adapter<ZaileysThreadId, ZaileysRaw> {
     const text = this._converter.renderPostable(message)
 
     if (files.length === 0 && attachments.length === 0) {
-      const key = await this.sendBuilt(jid, (b) => b.text(text), quoted)
+      const markdown = this._config.richMessages === true ? this.markdownOf(message) : null
+      const key = await this.sendBuilt(
+        jid,
+        (b) => (markdown !== null ? b.text(markdown, { rich: true }) : b.text(text)),
+        quoted,
+      )
       return this.toRaw(key, threadId)
     }
 
@@ -598,6 +644,13 @@ export class ZaileysAdapter implements Adapter<ZaileysThreadId, ZaileysRaw> {
     if (data instanceof ArrayBuffer) return Buffer.from(data)
     if (typeof Blob !== 'undefined' && data instanceof Blob) return Buffer.from(await data.arrayBuffer())
     throw new ValidationError('zaileys', 'Unsupported file data type — expected Buffer, ArrayBuffer, or Blob')
+  }
+
+  private markdownOf(message: AdapterPostableMessage): string | null {
+    if (typeof message === 'string') return null
+    if ('markdown' in message && typeof message.markdown === 'string') return message.markdown
+    if ('ast' in message && message.ast != null) return stringifyMarkdown(message.ast)
+    return null
   }
 
   private trackSent(key: WAMessageKey): void {
@@ -909,6 +962,12 @@ export class ZaileysAdapter implements Adapter<ZaileysThreadId, ZaileysRaw> {
   async startRecording(threadId: string): Promise<void> {
     const { jid } = this.decodeThreadId(threadId)
     await this._client.presence.recording(jid)
+  }
+
+  /** Toggle disappearing messages for a chat (`0` disables). */
+  async setDisappearing(threadId: string, seconds: number): Promise<void> {
+    const { jid } = this.decodeThreadId(threadId)
+    await this._client.setDisappearing(jid, seconds)
   }
 
   /** Forward a message to another thread. */

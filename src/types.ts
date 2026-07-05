@@ -45,6 +45,18 @@ export interface ZaileysAdapterConfig {
   forwardPollVotes?: boolean
   /** Mark chats as read automatically when a message arrives. Defaults to `false`. */
   autoMarkRead?: boolean
+  /**
+   * Render `{ markdown }` / `{ ast }` posts through zaileys AIRich — Meta-AI-style
+   * rich bubbles with syntax-highlighted code, tables, and directives — instead
+   * of plain WhatsApp markup. Defaults to `false`.
+   */
+  richMessages?: boolean
+  /**
+   * Route prefixed messages (`/cmd args`, using the zaileys client's command
+   * prefixes) to `chat.onSlashCommand` instead of message handlers.
+   * Defaults to `false`.
+   */
+  slashCommands?: boolean
 }
 
 /** A participant returned by {@link ZaileysAdapter.fetchGroupParticipants}. */

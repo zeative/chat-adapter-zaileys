@@ -170,3 +170,18 @@ describe('guards + factory', () => {
     expect(() => createZaileysAdapter({ client: fakeClient(), session: {} })).toThrow()
   })
 })
+
+describe('zaileysContext', () => {
+  it('returns the live context and null otherwise', async () => {
+    const { zaileysContext } = await import('../src/index.js')
+    const a = adapter()
+    const ctx = fakeContext()
+    const rich = a.parseMessage({ key: { id: 'M' }, context: ctx })
+    expect(zaileysContext(rich)).toBe(ctx)
+    const lite = a.parseMessage({
+      key: { remoteJid: 'x@s.whatsapp.net', id: 'H', fromMe: false },
+      message: { key: { id: 'H' }, message: { conversation: 'x' } } as never,
+    })
+    expect(zaileysContext(lite)).toBeNull()
+  })
+})

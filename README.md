@@ -150,6 +150,25 @@ bot.onAction('deploy', async (event) => {
 })
 ```
 
+### The zaileys payload, one call away
+
+Every live message carries the full zaileys `MessageContext` — flags, lazy media, quoted decode, citation:
+
+```typescript
+import { zaileysContext } from 'chat-adapter-zaileys'
+
+bot.onSubscribedMessage(async (thread, message) => {
+  const ctx = zaileysContext(message)
+  if (!ctx) return
+
+  ctx.isGroup / ctx.isForwarded / ctx.isViewOnce / ctx.isEphemeral // 20+ flags
+  ctx.senderDevice                        // 'android' | 'ios' | 'web' | …
+  const media = ctx.media                 // lazy — nothing downloads until you ask
+  const quoted = await ctx.replied()      // full decoded quoted message
+  await ctx.react('🔥')                   // zaileys shortcuts still work
+})
+```
+
 ### WhatsApp-native extensions
 
 Narrow any `Thread`/`Channel` with `requireZaileysAdapter` and go beyond the Chat SDK surface:
@@ -170,6 +189,7 @@ bot.onSubscribedMessage(async (thread, message) => {
   await wa.forwardMessage(thread.id, message.id, otherThreadId)
   await wa.pinMessage(thread.id, message.id)
   await wa.setPresence('available')
+  await wa.setDisappearing(thread.id, 86_400)      // disappearing messages (0 disables)
 
   const participants = await wa.fetchGroupParticipants(thread.id)
   const admins = participants.filter((p) => p.isAdmin)
@@ -217,6 +237,8 @@ Scheduled jobs persist in the Zaileys store and survive restarts (with a durable
 | `userName` | `"zaileys-bot"` | Bot display name |
 | `forwardPollVotes` | `true` | Also deliver poll votes to `processMessage` as text |
 | `autoMarkRead` | `false` | Mark chats read on inbound messages |
+| `richMessages` | `false` | Render `{ markdown }`/`{ ast }` posts as Meta-AI-style rich bubbles (zaileys AIRich) |
+| `slashCommands` | `false` | Route prefixed messages (`/cmd args`) to `chat.onSlashCommand` |
 | `logger` | Chat SDK logger | Logger override |
 
 ## Caveats
