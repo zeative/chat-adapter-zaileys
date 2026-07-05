@@ -1,6 +1,11 @@
 <div align="center">
 
+<br>
+
 <img alt="chat-adapter-zaileys - WhatsApp adapter for Chat SDK powered by Zaileys" src="https://github.com/zeative/chat-adapter-zaileys/blob/main/public/icon.png?raw=true" width="140">
+
+<br>
+<br>
 
 <h1 align="center">chat-adapter-zaileys — WhatsApp adapter <br /> for Chat SDK, powered by Zaileys</h1>
 
