@@ -1,0 +1,873 @@
+# Zaileys — Full Documentation
+
+> Type-safe, batteries-included WhatsApp bot framework for Node.js and TypeScript built on Baileys. This file concatenates the full documentation for LLM ingestion. Source: https://zeative.github.io/chat-adapter-zaileys
+
+
+---
+
+<!-- Page: https://zeative.github.io/chat-adapter-zaileys -->
+
+# Introduction
+
+**chat-adapter-zaileys** is the WhatsApp adapter for [Chat SDK](https://chat-sdk.dev), powered by [Zaileys](https://zeative.github.io/zaileys/). Zaileys handles the entire WhatsApp lifecycle — QR / pairing-code auth, session persistence, reconnection, LID → phone-number mapping, and message decoding — so the adapter stays thin and your bot code stays clean.
+
+```typescript
+
+const whatsapp = createZaileysAdapter({ session: { sessionId: 'main' } })
+
+const bot = new Chat({ userName: 'mybot', adapters: { whatsapp }, state: createMemoryState() })
+
+bot.onNewMention(async (thread, message) => {
+  await thread.subscribe()
+  await thread.post(`Hello, ${message.author.fullName}!`)
+})
+
+await bot.initialize()
+await whatsapp.connect()
+```
+
+## Why this adapter
+
+| Capability | chat-adapter-zaileys | raw-Baileys adapters |
+| --- | --- | --- |
+| Message history (`thread.fetchMessages`) | ✅ **real**, backed by the Zaileys message store | ❌ empty arrays |
+| Cards & buttons (`chat.onAction`) | ✅ **native WhatsApp buttons**, clicks round-trip | ❌ fallback text only |
+| Poll votes | ✅ decrypted natively, zero bookkeeping | ⚠️ manual `messageSecret` persistence |
+| Scheduled messages (`thread.schedule`) | ✅ native, persisted | ❌ |
+| Auth & reconnect | ✅ built in (QR terminal / pairing code) | ⚠️ wire it yourself |
+| Rich sends | ✅ media, stickers (incl. Lottie), voice notes, locations, polls, albums | ⚠️ partial |
+| Media in `queue`/`debounce` strategies | ✅ `rehydrateAttachment` | ❌ |
+| Raw escape hatch | full Zaileys `MessageContext` | plain `WAMessage` |
+
+## Three layers, 1:1 with Zaileys
+
+Everything Zaileys can do is reachable — by design, in three layers:
+
+1. **Translated to Chat SDK primitives** — messages, reactions, button clicks, poll votes, group joins, and slash commands arrive in the standard `chat.on…` handlers. History, scheduling, streaming, and attachments use the standard SDK APIs.
+2. **Named WhatsApp extensions** — things WhatsApp has but the SDK doesn't: [`reply`, `markRead`, `sendPoll`, `sendSticker`, `sendVoiceNote`, `setPresence`, `fetchGroupParticipants`, and more](/extensions).
+3. **Escape hatches** — [`native(threadId)`](/extensions#native--the-everything-hatch) exposes the entire Zaileys message builder (albums, carousels, lists, view-once, mentions, …) and `adapter.client` exposes the full Zaileys `Client` (groups, communities, newsletters, privacy, business, plugins).
+
+This site documents the **adapter**. For everything about the underlying client — storage adapters, plugins, commands, media processing — see the [Zaileys documentation](https://zeative.github.io/zaileys/).
+
+## Requirements
+
+- **Node.js v20+**, ESM
+- Peer dependencies: [`chat`](https://www.npmjs.com/package/chat) ≥ 4.30 and [`zaileys`](https://www.npmjs.com/package/zaileys) ≥ 4.7 — no direct Baileys dependency
+
+## Fair warning
+
+WhatsApp via Zaileys/Baileys is an **unofficial API**. Protocol changes can break things, and accounts risk suspension under WhatsApp's Terms of Service. Use responsibly.
+
+## Next steps
+
+- [Getting Started](/getting-started) — install, authenticate, first bot
+- [Events & Handlers](/events) — how Zaileys events map to Chat SDK handlers
+- [Message Payload](/payload) — the rich `MessageContext` behind every message
+
+
+---
+
+<!-- Page: https://zeative.github.io/chat-adapter-zaileys/getting-started -->
+
+# Getting Started
+
+From an empty folder to a Chat SDK bot answering on WhatsApp.
+
+### Install
+
+```sh npm2yarn
+npm i chat-adapter-zaileys zaileys chat @chat-adapter/state-memory
+```
+
+For durable message history, add the store backend you want (optional — memory is the zero-config default):
+
+```sh npm2yarn
+npm i better-sqlite3
+```
+
+### Create the bot
+
+```typescript
+
+const whatsapp = createZaileysAdapter({
+  session: { sessionId: 'main' },
+})
+
+const bot = new Chat({
+  userName: 'mybot',
+  adapters: { whatsapp },
+  state: createMemoryState(),
+})
+
+bot.onNewMention(async (thread, message) => {
+  await thread.subscribe()
+  await thread.post(`Hello, ${message.author.fullName}!`)
+})
+
+bot.onSubscribedMessage(async (thread, message) => {
+  await thread.post(`You said: ${message.text}`)
+})
+
+await bot.initialize()
+await whatsapp.connect()
+```
+
+Register all handlers **before** calling `whatsapp.connect()` — messages that arrive before initialization are lost.
+
+### Authenticate
+
+  
+    On first run a QR code prints to the terminal. Scan it via **WhatsApp → Linked Devices → Link a device**. The session persists under `./.zaileys/auth/<sessionId>` and is reused on restart.
+  
+  
+    Provide your number (E.164 digits, no `+`) and enter the 8-character code WhatsApp shows you:
+
+    ```typescript
+    const whatsapp = createZaileysAdapter({
+      session: { sessionId: 'main', authType: 'pairing', phoneNumber: '6281234567890' },
+    })
+    ```
+  
+
+Reconnection with backoff, session reuse, and logout handling are all managed by Zaileys — there is nothing to wire.
+
+## Bring your own Zaileys client
+
+The `session` shorthand covers most cases, but you can construct the Zaileys `Client` yourself for full control — storage adapters, plugins, citation, ignore-self, anything from [Zaileys configuration](https://zeative.github.io/zaileys/configuration):
+
+```typescript
+
+const client = new Client({
+  sessionId: 'main',
+  auth: new SqliteAuthStore({ database: './auth.db' }),
+  store: new SqliteMessageStore({ database: './wa.db' }), // durable history for fetchMessages
+})
+
+const whatsapp = createZaileysAdapter({ client })
+```
+
+Pass **either** `client` **or** `session` — never both. The factory throws a `ValidationError` if you do.
+
+## Lifecycle
+
+| Method | What it does |
+| --- | --- |
+| `adapter.connect()` | Opens the WhatsApp WebSocket (delegates to `client.connect()`) |
+| `adapter.disconnect()` | Cleanly closes the connection; also called by `chat.shutdown()` |
+| `adapter.handleWebhook()` | Always returns HTTP **501** — WhatsApp uses a persistent socket, not webhooks |
+
+## Next steps
+
+- [Configuration](/configuration) — every adapter option
+- [Events & Handlers](/events) — what fires where
+- [Cards & Buttons](/cards-buttons) — interactive messages
+
+
+---
+
+<!-- Page: https://zeative.github.io/chat-adapter-zaileys/configuration -->
+
+# Configuration
+
+## Factory
+
+```typescript
+
+const whatsapp = createZaileysAdapter({
+  session: { sessionId: 'main' },   // or: client: myZaileysClient
+  adapterName: 'zaileys',
+  userName: 'zaileys-bot',
+  forwardPollVotes: true,
+  autoMarkRead: false,
+  richMessages: false,
+  slashCommands: false,
+})
+```
+
+## Options
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `client` | `Client` | — | An existing Zaileys client. Mutually exclusive with `session`. |
+| `session` | `ClientOptions` | `{}` | Zaileys [`ClientOptions`](https://zeative.github.io/zaileys/configuration) used to construct a client (sessionId, authType, phoneNumber, auth/store adapters, plugins, …). |
+| `adapterName` | `string` | `"zaileys"` | Adapter identity and thread-ID prefix (`name:encodedJid`). Must not contain `:`. |
+| `userName` | `string` | `"zaileys-bot"` | Bot display name used by the Chat SDK. |
+| `logger` | `Logger` | Chat SDK logger | Logger override. |
+| `forwardPollVotes` | `boolean` | `true` | Also deliver poll votes to `processMessage` with the selected options as text — so `onSubscribedMessage` sees them. |
+| `autoMarkRead` | `boolean` | `false` | Send read receipts (blue ticks) for every inbound message automatically. |
+| `richMessages` | `boolean` | `false` | Render `{ markdown }` / `{ ast }` posts through Zaileys [AIRich](https://zeative.github.io/zaileys/rich-responses) — Meta-AI-style bubbles with highlighted code and tables — instead of plain WhatsApp markup. |
+| `slashCommands` | `boolean` | `false` | Route prefixed messages (`/cmd args`) to `chat.onSlashCommand` instead of message handlers. Prefixes come from the Zaileys client's `commandPrefix`. |
+
+## Multi-account
+
+Run several WhatsApp accounts in one `Chat` instance by giving each adapter a unique `adapterName` (it prefixes every thread ID):
+
+```typescript
+const main = createZaileysAdapter({
+  session: { sessionId: 'main' },
+  adapterName: 'wa-main',
+})
+const sales = createZaileysAdapter({
+  session: { sessionId: 'sales' },
+  adapterName: 'wa-sales',
+})
+
+const bot = new Chat({
+  userName: 'mybot',
+  adapters: { main, sales },
+  state: createMemoryState(),
+})
+
+await bot.initialize()
+await Promise.all([main.connect(), sales.connect()])
+```
+
+Thread IDs embed the `adapterName`. Changing it invalidates previously stored thread IDs (subscriptions, scheduled context) — pick a name once and keep it.
+
+## Thread IDs
+
+Thread IDs are `"<adapterName>:<base64url(jid)>"`. DMs and groups are both a single flat conversation — the thread **is** the channel, so `channelIdFromThreadId` returns the thread ID itself and the lock scope is `channel`.
+
+```typescript
+adapter.encodeThreadId({ jid: '628123456789@s.whatsapp.net' }) // "zaileys:NjI4MTIzNDU2Nzg5QHMud2hhdHNhcHAubmV0"
+adapter.decodeThreadId(threadId)                               // { jid: "628123456789@s.whatsapp.net" }
+adapter.isDM(threadId)                                         // true for DMs, false for groups/newsletters
+adapter.openDM('6281234567890')                                // → DM thread ID (accepts digits or a jid)
+```
+
+## Accessing the Zaileys client
+
+The full Zaileys `Client` is always one hop away:
+
+```typescript
+whatsapp.client.group.metadata(jid)
+whatsapp.client.privacy.updateLastSeen('contacts')
+whatsapp.client.broadcast(jids, (b) => b.text('Announcement'))
+whatsapp.client.on('call-incoming', (call) => { /* … */ })
+```
+
+See the [Zaileys docs](https://zeative.github.io/zaileys/) for the complete client surface.
+
+
+---
+
+<!-- Page: https://zeative.github.io/chat-adapter-zaileys/events -->
+
+# Events & Handlers
+
+The adapter wires Zaileys events into the standard Chat SDK handlers. Whatever has a native SDK concept arrives there; everything else stays reachable — fully typed — through `adapter.client.on(…)`.
+
+## Wired to Chat SDK handlers
+
+| Zaileys event | Chat SDK handler | Notes |
+| --- | --- | --- |
+| `message` (all types) | `onNewMention` / `onSubscribedMessage` / `onDirectMessage` | Full [`MessageContext`](/payload) attached as `message.raw.context`. Stories and newsletters are skipped. |
+| `reaction` | `onReaction` | `added` reflects add vs. remove; emoji normalized to an `EmojiValue`. |
+| `button-click` | `onAction` | Native button taps — see [Cards & Buttons](/cards-buttons). |
+| `list-select` | `onAction` | List row selections use the same action decoding. |
+| `poll-vote` | `onPollVote` (adapter) + message handlers | Decrypted natively — see [Polls](/polls). |
+| `group-join` | `onMemberJoinedChannel` | One event per joined participant, with `inviterId` when known. |
+| prefixed message (`/cmd`) | `onSlashCommand` | Opt-in via [`slashCommands: true`](/configuration#options). |
+
+```typescript
+bot.onReaction('🔥', async (event) => {
+  await event.thread.post(`${event.user.userName} reacted with fire!`)
+})
+
+bot.onMemberJoinedChannel(async (event) => {
+  const thread = await bot.getThread(event.channelId)
+  await thread.post(`Welcome <@${event.userId}>!`)
+})
+```
+
+## Slash commands
+
+With `slashCommands: true`, messages starting with a Zaileys command prefix are routed to `onSlashCommand` **instead of** message handlers — mirroring how Slack separates slash commands from messages:
+
+```typescript
+const whatsapp = createZaileysAdapter({
+  session: { sessionId: 'main', commandPrefix: ['/', '!'] },
+  slashCommands: true,
+})
+
+bot.onSlashCommand('/deploy', async (event) => {
+  await event.channel.post(`Deploying ${event.text}…`) // "/deploy prod" → text = "prod"
+})
+```
+
+The command is normalized to `/name` regardless of which prefix triggered it.
+
+## Message-author semantics
+
+- `author.isMe` — `true` for messages sent by the paired account (`fromMe`) or tracked as sent by this adapter instance.
+- `author.isBot` — `true` for adapter-sent messages, otherwise Zaileys' bot detection (`ctx.isBot`).
+- `message.isMention` — set when the bot is @-tagged (`ctx.isTagMe`), in addition to the SDK's own username matching.
+
+## Everything else: typed passthrough
+
+Zaileys emits 20+ event types. Those without a Chat SDK equivalent — calls, presence, group updates, edits, deletions, history sync — are one line away, fully typed:
+
+```typescript
+whatsapp.client.on('call-incoming', (call) => console.log('incoming call from', call.from))
+whatsapp.client.on('group-update', (u) => console.log('group changed:', u.update))
+whatsapp.client.on('delete', (d) => console.log('message deleted:', d.key.id))
+whatsapp.client.on('presence', (p) => console.log(p))
+```
+
+See [Zaileys → Events](https://zeative.github.io/zaileys/events) for every event and payload shape.
+
+## Concurrency & locking
+
+The adapter declares `lockScope: 'channel'` — WhatsApp conversations are flat, so all messages in a chat contend for the same lock. Combine with the SDK's `concurrency` strategies (`queue`, `debounce`, `burst`) as usual; media attachments survive serialization thanks to [`rehydrateAttachment`](/history#media-rehydration).
+
+
+---
+
+<!-- Page: https://zeative.github.io/chat-adapter-zaileys/payload -->
+
+# Message Payload
+
+Every live inbound message carries the complete Zaileys [`MessageContext`](https://zeative.github.io/zaileys/message-payload) — the decoded, normalized payload Zaileys is known for. One helper unlocks it:
+
+```typescript
+
+bot.onSubscribedMessage(async (thread, message) => {
+  const ctx = zaileysContext(message)
+  if (!ctx) return // history fetches / sent echoes have no live context
+
+  ctx.senderDevice                     // 'android' | 'ios' | 'web' | 'desktop'
+  ctx.isForwarded / ctx.isViewOnce     // 20+ decoded flags
+  const quoted = await ctx.replied()   // the full decoded quoted message
+  await ctx.react('🔥')                // zaileys shortcuts still work
+})
+```
+
+## The raw shape
+
+`Message.raw` is a `ZaileysRaw`:
+
+| Field | Type | When present |
+| --- | --- | --- |
+| `key` | `WAMessageKey` | Always — remoteJid, id, fromMe. |
+| `context` | `MessageContext` | Live inbound messages. |
+| `message` | `WAMessage` | Live inbound + history fetches (the raw Baileys message). |
+
+`zaileysContext(message)` is the typed accessor for `raw.context` — it returns `null` instead of forcing you to null-chain.
+
+## Field mapping
+
+How the adapter fills the Chat SDK `Message` from `MessageContext`:
+
+| Chat SDK field | Source |
+| --- | --- |
+| `id` | `ctx.chatId` (the WhatsApp message id) |
+| `threadId` | `ctx.roomId` — always the conversation target |
+| `text` | `ctx.text` (body / caption / poll name, unwrapped) |
+| `formatted` | `ctx.text` parsed from WhatsApp markup to mdast |
+| `author.userId` | `ctx.senderId` — phone-number jid, LID already resolved |
+| `author.fullName` | `ctx.senderName` (push name) |
+| `author.isMe` | `ctx.isFromMe` or tracked adapter sends |
+| `metadata.dateSent` | `ctx.timestamp` (already in ms) |
+| `metadata.edited` | `ctx.isEdited` |
+| `isMention` | `ctx.isTagMe` |
+| `attachments` | `ctx.media` — lazy, see below |
+
+## Lazy media
+
+Media never downloads until you ask. `ctx.media` (or the SDK-standard `message.attachments[0]`) exposes metadata immediately and bytes on demand:
+
+```typescript
+const [attachment] = message.attachments
+if (attachment) {
+  attachment.mimeType            // 'image/jpeg'
+  attachment.size                // bytes, when known
+  const buffer = await attachment.fetchData() // downloads now
+}
+
+// or through the zaileys context:
+const ctx = zaileysContext(message)
+if (ctx?.media && 'buffer' in ctx.media) {
+  const buffer = await ctx.media.buffer()
+}
+```
+
+Sticker attachments map to `type: 'image'`, documents to `type: 'file'`.
+
+## What the context gives you beyond the SDK
+
+Straight from [Zaileys' message payload](https://zeative.github.io/zaileys/message-payload):
+
+- **Identity** — `uniqueId` (per-message fingerprint), `staticId` (stable sender-in-room hash), `senderLid`, `senderDevice`, `receiverId`
+- **Flags** — `isGroup`, `isBroadcast`, `isStory`, `isViewOnce`, `isEphemeral`, `isForwarded`, `isQuestion`, `isPrefix`, `isTagMe`, `isEdited`, `isDeleted`, `isPinned`, `isBot`, `isHideTags`, and more
+- **Lazy functions** — `roomName()`, `receiverName()`, `replied()`, `message()` (raw `WAMessage`)
+- **Actions** — `reply(text)`, `react(emoji)`
+- **Citation** — `citation.authors()` / `citation.banned()` predicates from your Zaileys config
+
+`mentions`, `links`, `chatType`, and typed media unions (`poll`, `location`, `event`, `contact`, `album`, …) are all documented in [Zaileys → Message Payload](https://zeative.github.io/zaileys/message-payload).
+
+
+---
+
+<!-- Page: https://zeative.github.io/chat-adapter-zaileys/messages -->
+
+# Posting Messages
+
+`thread.post()` accepts every Chat SDK postable shape. The adapter renders it to what WhatsApp actually supports.
+
+## Text & formatting
+
+```typescript
+await thread.post('plain text')
+await thread.post({ markdown: '**bold** _italic_ ~~strike~~ `code` [docs](https://example.com)' })
+```
+
+Markdown / mdast is converted to WhatsApp markup:
+
+| Markdown | WhatsApp |
+| --- | --- |
+| `**bold**` | `*bold*` |
+| `_italic_` | `_italic_` |
+| `~~strike~~` | `~strike~` |
+| `` `code` `` | `` `code` `` |
+| ` ```block``` ` | ` ```block``` ` |
+| `[text](url)` | `text (url)` — WhatsApp has no hyperlinks |
+| `# Heading` | `*Heading*` |
+| `> quote` | `> quote` |
+
+Inbound WhatsApp markup is parsed back to mdast on `message.formatted`, so round-trips are symmetric.
+
+## Rich bubbles (AIRich)
+
+Flip [`richMessages: true`](/configuration#options) and markdown posts render through Zaileys [AIRich](https://zeative.github.io/zaileys/rich-responses) — Meta-AI-style bubbles with syntax-highlighted code blocks, tables, and directives:
+
+```typescript
+const whatsapp = createZaileysAdapter({ session: { sessionId: 'main' }, richMessages: true })
+
+await thread.post({
+  markdown: ['## Daily brief', '', '```ts', 'const x = 1', '```'].join('\n'),
+})
+```
+
+Plain-string posts are unaffected — only `{ markdown }` and `{ ast }` shapes go rich.
+
+## Files & attachments
+
+```typescript
+await thread.post({
+  markdown: 'Here is the report',
+  files: [{ data: pdfBuffer, filename: 'report.pdf', mimeType: 'application/pdf' }],
+})
+```
+
+Routing is by MIME type: `image/*` → image, `video/*` → video, `audio/*` → audio, everything else → document. The text becomes the caption of the first file; additional files send as follow-ups. `Attachment` objects (with `data`, `fetchData`, or `url`) work the same way — URLs are passed to Zaileys, which downloads them for you.
+
+## Streaming
+
+No extra wiring — the SDK's fallback streaming (post + edit) works because the adapter implements `editMessage`:
+
+```typescript
+bot.onSubscribedMessage(async (thread) => {
+  const stream = await ai.streamText({ /* … */ })
+  await thread.post(stream.textStream)
+})
+```
+
+## Edit, delete, react, typing
+
+```typescript
+const sent = await thread.post('Original')
+await sent.edit('Fixed')            // → WhatsApp native edit
+await sent.addReaction('👍')        // → native reaction
+await sent.removeReaction('👍')
+await sent.delete()                 // → delete for everyone
+
+await thread.startTyping()          // "typing…" indicator
+```
+
+Editing supports text content. To edit media or send anything exotic, use [`native()`](/extensions#native--the-everything-hatch).
+
+## Cards
+
+Cards render as **native WhatsApp buttons** with full `onAction` round-trips — they get their own page: [Cards & Buttons](/cards-buttons).
+
+## Quoted replies
+
+WhatsApp's reply bubble is an adapter extension (the SDK has no quoting concept):
+
+```typescript
+
+bot.onSubscribedMessage(async (thread, message) => {
+  const wa = requireZaileysAdapter(thread)
+  await wa.reply(message, 'Got it!') // quotes the original, media supported
+})
+```
+
+
+---
+
+<!-- Page: https://zeative.github.io/chat-adapter-zaileys/cards-buttons -->
+
+# Cards & Buttons
+
+Raw-Baileys adapters degrade Cards to plain text. This adapter renders them as **native WhatsApp buttons** — and button taps come back through the standard `chat.onAction` pipeline.
+
+## Posting a card
+
+```tsx
+
+bot.onNewMention(async (thread) => {
+  await thread.post(
+    <Card title="Deploy?">
+      <Actions>
+        <Button id="deploy" value="prod">Ship it</Button>
+        <Button id="cancel">Cancel</Button>
+      </Actions>
+    </Card>
+  )
+})
+```
+
+What maps where:
+
+| Card part | WhatsApp |
+| --- | --- |
+| `title` | Message title |
+| `subtitle` | Footer |
+| `imageUrl` | Header image |
+| Body text / fields | Message body (fallback text) |
+| `<Button>` | Native reply button |
+
+## Handling clicks
+
+```typescript
+bot.onAction('deploy', async (event) => {
+  await event.thread?.post(`Deploying ${event.value}…`) // value = "prod"
+})
+```
+
+`event.actionId`, `event.value`, `event.user`, and `event.messageId` are all populated. List-row selections (sent via [`native().list(…)`](/extensions#native--the-everything-hatch)) arrive through `onAction` too.
+
+## `callbackUrl` buttons
+
+Buttons with `callbackUrl` work as designed by the SDK — the URL is tokenized into `button.value` (`__cb:…`), the adapter round-trips it, and the SDK POSTs to your callback on tap.
+
+## Encoding & limits
+
+The adapter encodes `actionId` and `value` together into the WhatsApp button id using a newline delimiter, and validates the result against WhatsApp's **256-character** id limit — a `ValidationError` is thrown at post time if exceeded, never a silent truncation.
+
+WhatsApp has no modals, selects, or multi-step forms. `LinkButton` and select elements inside cards are not rendered as buttons — put URLs in the card body instead. For richer input, send a [list message](/extensions#native--the-everything-hatch) or a [poll](/polls).
+
+## Beyond cards: native interactive messages
+
+The full Zaileys interactive surface — URL/copy/call buttons, lists, carousels, templates — is available through `native()`:
+
+```typescript
+const wa = requireZaileysAdapter(thread)
+
+await wa.native(thread.id).buttons(
+  [
+    { id: 'yes', text: 'Yes' },
+    { type: 'url', text: 'Open docs', url: 'https://zeative.github.io/zaileys/' },
+    { type: 'copy', text: 'Copy code', code: 'ZAILEYS-2026' },
+  ],
+  { title: 'Pick one', text: 'Tap a button below' },
+)
+
+whatsapp.client.on('button-click', (ctx) => console.log('tapped:', ctx.buttonId))
+```
+
+See [Zaileys → Interactive Messages](https://zeative.github.io/zaileys/interactive) for every button type and option.
+
+
+---
+
+<!-- Page: https://zeative.github.io/chat-adapter-zaileys/history -->
+
+# Message History
+
+WhatsApp has no REST history API, so raw-Baileys adapters return empty arrays. This adapter implements `fetchMessages` for real, backed by the [Zaileys message store](https://zeative.github.io/zaileys/storage) — every message the client sees is persisted and queryable.
+
+## Fetching
+
+```typescript
+const recent = await thread.fetchMessages({ limit: 50 })
+// recent.messages — chronological (oldest → newest), full Message objects
+
+const older = await thread.fetchMessages({ limit: 50, cursor: recent.nextCursor })
+```
+
+- Pagination is **backward** (newest first, cursor moves to older messages) — the natural direction for chat views. `direction: 'forward'` throws a `ValidationError` since the store paginates by `before`-timestamp only.
+- `nextCursor` is omitted when there is nothing older.
+- `fetchChannelMessages` delegates to `fetchMessages` (a WhatsApp chat has no channel/thread split).
+- `fetchMessage(threadId, messageId)` looks up a single stored message.
+
+History messages are parsed from stored `WAMessage`s — text, captions, author, and timestamps are populated; the live [`MessageContext`](/payload) (`zaileysContext`) is only present on real-time messages.
+
+## Depth = your store
+
+History depth equals what your Zaileys store has seen. The in-memory default forgets on restart — give the client a durable adapter:
+
+```typescript
+
+const client = new Client({
+  sessionId: 'main',
+  store: new SqliteMessageStore({ database: './wa.db' }),
+})
+const whatsapp = createZaileysAdapter({ client })
+```
+
+Available backends: `memory` (default), `sqlite`, `redis`, `postgres`, `convex` — see [Zaileys → Storage Adapters](https://zeative.github.io/zaileys/storage).
+
+Because history is real, the adapter sets `persistThreadHistory: false` — the SDK does not need to duplicate messages into its own state adapter.
+
+## Media rehydration
+
+When you use `queue` / `debounce` / `burst` concurrency, the SDK serializes messages — normally destroying attachment download closures. The adapter implements `rehydrateAttachment`: it stores the message key in `fetchMetadata` and rebuilds `fetchData` on rehydration, re-downloading media through `client.downloadMedia(key)` from the store.
+
+```typescript
+const bot = new Chat({
+  adapters: { whatsapp },
+  state: myState,
+  concurrency: 'queue', // attachments still download after dequeue
+  /* … */
+})
+```
+
+
+---
+
+<!-- Page: https://zeative.github.io/chat-adapter-zaileys/polls -->
+
+# Polls
+
+WhatsApp polls are end-to-end encrypted — vote events arrive as opaque `pollUpdateMessage`s. Raw-Baileys adapters make you persist each poll's `messageSecret` and decrypt votes yourself. Here, **Zaileys decrypts votes natively**: no bookkeeping, no TTLs, and it works across restarts for any poll this account sent.
+
+## Sending a poll
+
+```typescript
+
+const wa = requireZaileysAdapter(thread)
+
+const poll = await wa.sendPoll({
+  threadId: thread.id,
+  question: 'What time works for the call?',
+  options: ['10:00', '14:00', '17:00'],
+  selectableCount: 1, // any other value allows multiple selections
+})
+```
+
+## Receiving votes
+
+```typescript
+// every poll this account sent
+wa.onPollVote((vote) => {
+  console.log(vote.voter.userName, '→', vote.selectedOptions)
+})
+
+// scoped to one (or several) polls
+wa.onPollVote(poll.id, async (vote) => {
+  await thread.post(`${vote.voter.userName} picked ${vote.selectedOptions[0]}`)
+})
+wa.onPollVote([pollA.id, pollB.id], handler)
+```
+
+The `ZaileysPollVote` payload:
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `threadId` | `string` | Where the poll lives |
+| `pollMessageId` | `string` | Id of the original poll message |
+| `question` | `string \| null` | Recovered from the message store when available |
+| `options` | `string[]` | Same — empty if the poll left the store |
+| `selectedOptions` | `string[]` | Current selection; **empty = vote cleared** |
+| `voter` | `Author` | Chat SDK author shape |
+| `raw` | `PollVotePayload` | The Zaileys payload |
+
+## Votes as messages
+
+By default (`forwardPollVotes: true`) each non-empty vote is also forwarded to the regular message pipeline with the selected options as text — so `onSubscribedMessage` bots see poll answers without extra code:
+
+```typescript
+bot.onSubscribedMessage(async (thread, message) => {
+  // a vote for "14:00" arrives as message.text === "14:00"
+})
+```
+
+Set `forwardPollVotes: false` to keep votes exclusively in `onPollVote`.
+
+Polls sent through **any** Zaileys path — `wa.sendPoll`, `native(threadId).poll(…)`, even `client.send(jid).poll(…)` outside the adapter — all produce decryptable votes. There is no "tracked polls" registry to manage.
+
+
+---
+
+<!-- Page: https://zeative.github.io/chat-adapter-zaileys/scheduling -->
+
+# Scheduling
+
+In the Chat SDK, `scheduleMessage` is normally a Slack-only capability. This adapter implements it natively through the [Zaileys scheduler](https://zeative.github.io/zaileys/automation), so the standard API just works on WhatsApp:
+
+```typescript
+const scheduled = await thread.schedule('Reminder: standup in 10 minutes!', {
+  postAt: new Date(Date.now() + 3600_000),
+})
+
+scheduled.scheduledMessageId // zaileys job id
+scheduled.postAt             // Date
+
+await scheduled.cancel()     // change of plans
+```
+
+## Persistence
+
+Scheduled jobs are persisted in the Zaileys **message store**. With a durable adapter (SQLite/Postgres/Redis/Convex), pending sends survive process restarts — Zaileys reloads and re-arms them on `connect()`:
+
+```typescript
+const client = new Client({
+  sessionId: 'main',
+  store: new SqliteMessageStore({ database: './wa.db' }),
+})
+```
+
+With the in-memory default, jobs live only as long as the process.
+
+## Rate limiting
+
+Zaileys throttles scheduled dispatches (default 1/sec, configurable via `scheduleRateLimitPerSec` in `ClientOptions`) so a burst of due jobs doesn't trip WhatsApp's limits.
+
+`thread.schedule` accepts text-shaped postables (string / markdown / ast). To schedule media or interactive content, use the Zaileys scheduler directly with the full builder:
+
+```typescript
+await whatsapp.client.scheduleAt(date, (b) =>
+  b.to(jid).image('./promo.jpg', { caption: 'Launching today!' }),
+)
+```
+
+
+---
+
+<!-- Page: https://zeative.github.io/chat-adapter-zaileys/extensions -->
+
+# Extensions & `native()`
+
+WhatsApp can do things the Chat SDK has no vocabulary for. The adapter exposes them as typed extension methods — narrow any `Thread`, `Channel`, or adapter with the guards:
+
+```typescript
+
+bot.onSubscribedMessage(async (thread, message) => {
+  const wa = requireZaileysAdapter(thread) // throws if not a zaileys thread
+  // …
+})
+```
+
+## Extension reference
+
+| Method | What it does |
+| --- | --- |
+| `reply(message, content)` | Quoted reply — WhatsApp's native reply bubble. Accepts any postable, media included. |
+| `markRead(threadId)` | Send read receipts (blue ticks) for the chat. |
+| `setPresence('available' \| 'unavailable')` | Global online/offline status. |
+| `startTyping(threadId)` | "typing…" indicator (also used by the SDK automatically). |
+| `startRecording(threadId)` | "recording audio…" indicator. |
+| `setDisappearing(threadId, seconds)` | Toggle disappearing messages (`0` disables). |
+| `sendLocation({ threadId, latitude, longitude, name?, address? })` | Native map-pin message. |
+| `sendPoll({ threadId, question, options, selectableCount? })` | Native poll — see [Polls](/polls). |
+| `sendSticker(threadId, src)` | Sticker from webp/png/jpeg — Zaileys converts, animated Lottie included. |
+| `sendVoiceNote(threadId, src)` | Push-to-talk audio bubble. |
+| `sendContact(threadId, vcard)` | Contact card. |
+| `forwardMessage(threadId, messageId, toThreadId)` | Forward to another chat. |
+| `pinMessage(threadId, messageId)` / `unpinMessage(…)` | Pin / unpin in chat. |
+| `fetchGroupParticipants(threadId)` | Members with `isAdmin` / `isSuperAdmin` flags. Throws for non-groups. |
+| `getUser(userId)` | `UserInfo` from the contact store + profile picture. |
+| `openDM(userId)` | Thread ID for a DM (accepts digits or a jid). |
+| `onPollVote(handler)` | Decrypted poll votes — see [Polls](/polls). |
+
+```typescript
+const wa = requireZaileysAdapter(thread)
+
+await wa.markRead(thread.id)
+await wa.sendLocation({ threadId: thread.id, latitude: -6.2, longitude: 106.8, name: 'Jakarta' })
+await wa.sendVoiceNote(thread.id, oggBuffer)
+
+const admins = (await wa.fetchGroupParticipants(thread.id)).filter((p) => p.isAdmin)
+```
+
+## `native()` — the everything hatch
+
+One method exposes the **entire Zaileys message builder**, pre-targeted at a thread. Every content type and modifier from [Zaileys → Sending Messages](https://zeative.github.io/zaileys/sending-messages) is available:
+
+```typescript
+await wa.native(thread.id).image(buffer, { viewOnce: true })
+await wa.native(thread.id).album([
+  { type: 'image', src: './a.jpg' },
+  { type: 'image', src: './b.jpg' },
+])
+await wa.native(thread.id).list({ title: 'Menu', buttonText: 'Open', sections })
+await wa.native(thread.id).event({ name: 'Standup', startTime })
+await wa.native(thread.id).text('hey everyone').mentionAll()
+await wa.native(thread.id).text('secret').disappearing(86_400)
+```
+
+Text · image · video · video note · audio · document · sticker · buttons · carousel · list · poll · location · contact · template · event · group invite · product · album — plus `.reply()`, `.mentions()`, `.mentionAll()`, `.disappearing()` modifiers. Awaiting the builder returns the sent `WAMessageKey`.
+
+Messages sent through `native()` are not tracked for `author.isMe` echo detection — a minor trade-off for full builder access.
+
+## `adapter.client` — the whole Zaileys client
+
+Everything else lives one property away. Groups, communities, newsletters, privacy, profile, contacts, business catalogs, broadcast, the command framework, plugins, LID↔PN mapping:
+
+```typescript
+whatsapp.client.group.promote(groupJid, [userJid])
+whatsapp.client.newsletter.create('My Channel', 'Updates')
+whatsapp.client.privacy.updateLastSeen('contacts')
+whatsapp.client.broadcast(jids, (b) => b.text('Announcement'), { rateLimitPerSec: 5 })
+whatsapp.client.command('ping', (ctx) => ctx.reply('pong 🏓'))
+```
+
+The complete surface is documented at [zeative.github.io/zaileys](https://zeative.github.io/zaileys/).
+
+
+---
+
+<!-- Page: https://zeative.github.io/chat-adapter-zaileys/troubleshooting -->
+
+# Troubleshooting & FAQ
+
+## Known limits
+
+| Limit | Why | Workaround |
+| --- | --- | --- |
+| No modals / ephemeral messages | WhatsApp has no equivalent | `thread.postEphemeral` falls back to DM when `fallbackToDM: true` |
+| `fetchMessages` forward pagination throws | The Zaileys store paginates by `before`-timestamp only | Paginate backward (the default) |
+| History starts when the store starts | WhatsApp has no REST history API | Use a durable store (SQLite/Postgres/Redis/Convex) from day one |
+| `sent.edit()` is text-only | SDK edit path renders postables to text | `wa.native()` + `client.edit(key)` for media edits |
+| Card `LinkButton` / selects not rendered | WhatsApp buttons are reply-buttons | URL in the card body, or `native().buttons([{ type: 'url', … }])` |
+| `native()` sends aren't `isMe`-tracked | Builder bypasses the adapter's send path | Use `thread.post` when echo detection matters |
+
+## Common issues
+
+### Messages arrive but no handler fires
+
+Handlers must be registered **before** `adapter.connect()`. Also check the thread is subscribed — unsubscribed group messages only reach `onNewMention` when the bot is @-tagged.
+
+### `senderUsername` / usernames
+
+WhatsApp does not disclose usernames on demand (the USync `username` query is privacy-gated server-side). Rely on `author.fullName` (push name) and `author.userId` (phone jid).
+
+### Reactions in groups don't land
+
+Reacting to another member's message in a group needs the participant jid. Pass it as the 4th argument: `adapter.addReaction(threadId, messageId, emoji, participantJid)`.
+
+### QR loop / logged out
+
+Delete the auth folder (`./.zaileys/auth/<sessionId>`) and re-scan. After an explicit logout WhatsApp invalidates the session — reconnection is only automatic for transient drops.
+
+### Account safety
+
+This is an **unofficial API**. To reduce ban risk: don't spam, respect `broadcast` rate limits, keep `autoMarkRead`/presence human-like, and avoid mass cold outreach. You use it at your own risk under WhatsApp's ToS.
+
+Client-level issues (auth stores, media processing, Termux installs, runtime quirks) are covered in [Zaileys → Troubleshooting](https://zeative.github.io/zaileys/troubleshooting).
+
+## Still stuck?
+
+- Open an issue: [github.com/zeative/chat-adapter-zaileys/issues](https://github.com/zeative/chat-adapter-zaileys/issues)
+- Ask in [Discord](https://discord.gg/KBHhTTVUc5) or the [WhatsApp group](https://chat.whatsapp.com/GlQfvc83mSH3F6ov06vuCt)

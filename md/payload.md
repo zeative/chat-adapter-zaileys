@@ -1,0 +1,83 @@
+# Message Payload
+
+> Source: https://zeative.github.io/chat-adapter-zaileys/payload
+
+# Message Payload
+
+Every live inbound message carries the complete Zaileys [`MessageContext`](https://zeative.github.io/zaileys/message-payload) — the decoded, normalized payload Zaileys is known for. One helper unlocks it:
+
+```typescript
+
+bot.onSubscribedMessage(async (thread, message) => {
+  const ctx = zaileysContext(message)
+  if (!ctx) return // history fetches / sent echoes have no live context
+
+  ctx.senderDevice                     // 'android' | 'ios' | 'web' | 'desktop'
+  ctx.isForwarded / ctx.isViewOnce     // 20+ decoded flags
+  const quoted = await ctx.replied()   // the full decoded quoted message
+  await ctx.react('🔥')                // zaileys shortcuts still work
+})
+```
+
+## The raw shape
+
+`Message.raw` is a `ZaileysRaw`:
+
+| Field | Type | When present |
+| --- | --- | --- |
+| `key` | `WAMessageKey` | Always — remoteJid, id, fromMe. |
+| `context` | `MessageContext` | Live inbound messages. |
+| `message` | `WAMessage` | Live inbound + history fetches (the raw Baileys message). |
+
+`zaileysContext(message)` is the typed accessor for `raw.context` — it returns `null` instead of forcing you to null-chain.
+
+## Field mapping
+
+How the adapter fills the Chat SDK `Message` from `MessageContext`:
+
+| Chat SDK field | Source |
+| --- | --- |
+| `id` | `ctx.chatId` (the WhatsApp message id) |
+| `threadId` | `ctx.roomId` — always the conversation target |
+| `text` | `ctx.text` (body / caption / poll name, unwrapped) |
+| `formatted` | `ctx.text` parsed from WhatsApp markup to mdast |
+| `author.userId` | `ctx.senderId` — phone-number jid, LID already resolved |
+| `author.fullName` | `ctx.senderName` (push name) |
+| `author.isMe` | `ctx.isFromMe` or tracked adapter sends |
+| `metadata.dateSent` | `ctx.timestamp` (already in ms) |
+| `metadata.edited` | `ctx.isEdited` |
+| `isMention` | `ctx.isTagMe` |
+| `attachments` | `ctx.media` — lazy, see below |
+
+## Lazy media
+
+Media never downloads until you ask. `ctx.media` (or the SDK-standard `message.attachments[0]`) exposes metadata immediately and bytes on demand:
+
+```typescript
+const [attachment] = message.attachments
+if (attachment) {
+  attachment.mimeType            // 'image/jpeg'
+  attachment.size                // bytes, when known
+  const buffer = await attachment.fetchData() // downloads now
+}
+
+// or through the zaileys context:
+const ctx = zaileysContext(message)
+if (ctx?.media && 'buffer' in ctx.media) {
+  const buffer = await ctx.media.buffer()
+}
+```
+
+Sticker attachments map to `type: 'image'`, documents to `type: 'file'`.
+
+## What the context gives you beyond the SDK
+
+Straight from [Zaileys' message payload](https://zeative.github.io/zaileys/message-payload):
+
+- **Identity** — `uniqueId` (per-message fingerprint), `staticId` (stable sender-in-room hash), `senderLid`, `senderDevice`, `receiverId`
+- **Flags** — `isGroup`, `isBroadcast`, `isStory`, `isViewOnce`, `isEphemeral`, `isForwarded`, `isQuestion`, `isPrefix`, `isTagMe`, `isEdited`, `isDeleted`, `isPinned`, `isBot`, `isHideTags`, and more
+- **Lazy functions** — `roomName()`, `receiverName()`, `replied()`, `message()` (raw `WAMessage`)
+- **Actions** — `reply(text)`, `react(emoji)`
+- **Citation** — `citation.authors()` / `citation.banned()` predicates from your Zaileys config
+
+`mentions`, `links`, `chatType`, and typed media unions (`poll`, `location`, `event`, `contact`, `album`, …) are all documented in [Zaileys → Message Payload](https://zeative.github.io/zaileys/message-payload).
