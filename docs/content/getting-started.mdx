@@ -13,7 +13,7 @@ From an empty folder to a Chat SDK bot answering on WhatsApp.
 ### Install
 
 ```sh npm2yarn
-npm i chat-adapter-zaileys zaileys chat
+npm i chat-adapter-zaileys zaileys chat @chat-adapter/state-memory
 ```
 
 For durable message history, add the store backend you want (optional — memory is the zero-config default):
@@ -25,7 +25,8 @@ npm i better-sqlite3
 ### Create the bot
 
 ```typescript
-import { Chat, memoryState } from 'chat'
+import { Chat } from 'chat'
+import { createMemoryState } from '@chat-adapter/state-memory'
 import { createZaileysAdapter } from 'chat-adapter-zaileys'
 
 const whatsapp = createZaileysAdapter({
@@ -35,7 +36,7 @@ const whatsapp = createZaileysAdapter({
 const bot = new Chat({
   userName: 'mybot',
   adapters: { whatsapp },
-  state: memoryState(),
+  state: createMemoryState(),
 })
 
 bot.onNewMention(async (thread, message) => {

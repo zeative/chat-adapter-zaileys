@@ -57,7 +57,8 @@
 ## Quick start
 
 ```typescript
-import { Chat, memoryState } from 'chat'
+import { Chat } from 'chat'
+import { createMemoryState } from '@chat-adapter/state-memory'
 import { createZaileysAdapter } from 'chat-adapter-zaileys'
 
 const whatsapp = createZaileysAdapter({
@@ -67,7 +68,7 @@ const whatsapp = createZaileysAdapter({
 const bot = new Chat({
   userName: 'mybot',
   adapters: { whatsapp },
-  state: memoryState(),
+  state: createMemoryState(),
 })
 
 bot.onNewMention(async (thread, message) => {
@@ -103,7 +104,7 @@ const whatsapp = createZaileysAdapter({
 ## Install
 
 ```bash
-npm i chat-adapter-zaileys zaileys chat   # or: pnpm add  •  yarn add  •  bun add
+npm i chat-adapter-zaileys zaileys chat @chat-adapter/state-memory   # or: pnpm add  •  yarn add  •  bun add
 ```
 
 Requires **Node.js v20+**. Peer dependencies are just `chat` and `zaileys` — no direct Baileys dependency.

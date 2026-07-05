@@ -53,7 +53,7 @@ const sales = createZaileysAdapter({
 const bot = new Chat({
   userName: 'mybot',
   adapters: { main, sales },
-  state: memoryState(),
+  state: createMemoryState(),
 })
 
 await bot.initialize()

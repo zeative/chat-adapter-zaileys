@@ -9,12 +9,13 @@ import { Callout } from 'nextra/components'
 **chat-adapter-zaileys** is the WhatsApp adapter for [Chat SDK](https://chat-sdk.dev), powered by [Zaileys](https://zeative.github.io/zaileys/). Zaileys handles the entire WhatsApp lifecycle — QR / pairing-code auth, session persistence, reconnection, LID → phone-number mapping, and message decoding — so the adapter stays thin and your bot code stays clean.
 
 ```typescript
-import { Chat, memoryState } from 'chat'
+import { Chat } from 'chat'
+import { createMemoryState } from '@chat-adapter/state-memory'
 import { createZaileysAdapter } from 'chat-adapter-zaileys'
 
 const whatsapp = createZaileysAdapter({ session: { sessionId: 'main' } })
 
-const bot = new Chat({ userName: 'mybot', adapters: { whatsapp }, state: memoryState() })
+const bot = new Chat({ userName: 'mybot', adapters: { whatsapp }, state: createMemoryState() })
 
 bot.onNewMention(async (thread, message) => {
   await thread.subscribe()
