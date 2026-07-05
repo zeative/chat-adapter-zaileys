@@ -56,6 +56,6 @@ done
 echo "  ✓ build status: ${st:-unknown}"
 
 echo "▸ Verifikasi…"
-code="$(curl -s -o /dev/null -w '%{http_code}' -L https://zeative.github.io/zaileys/ || echo 000)"
-echo "  https://zeative.github.io/zaileys/ → http=$code"
+code="$(curl -s -o /dev/null -w '%{http_code}' -L https://zeative.github.io/chat-adapter-zaileys/ || echo 000)"
+echo "  https://zeative.github.io/chat-adapter-zaileys/ → http=$code"
 [ "$code" = "200" ] && echo "✅ Live" || { echo "⚠ Belum 200 — cek beberapa menit lagi (propagasi CDN)"; exit 1; }
