@@ -6,8 +6,8 @@ import 'nextra-theme-docs/style.css'
 const GA_ID = 'G-B76YYS1K85'
 const basePath = process.env.DOCS_BASE_PATH ?? '/chat-adapter-zaileys'
 const SITE_URL = process.env.DOCS_SITE_URL ?? 'https://zeative.github.io/chat-adapter-zaileys'
-const logoSrc = `${basePath}/icon.png`
-const logoUrl = `${SITE_URL}/icon.png`
+const logoSrc = `${basePath}/favicon/favicon-96x96.png`
+const logoUrl = `${SITE_URL}/favicon/web-app-manifest-512x512.png`
 
 const DESCRIPTION =
   'chat-adapter-zaileys plugs WhatsApp into Chat SDK through Zaileys — real message history, native buttons from Cards, decrypted poll votes, scheduling, and rich media with QR/pairing auth handled for you.'
