@@ -501,7 +501,7 @@ export class ZaileysAdapter implements Adapter<ZaileysThreadId, ZaileysRaw> {
     jid: string,
     threadId: string,
     message: AdapterPostableMessage,
-    quoted?: WAMessageKey,
+    quoted?: WAMessage,
   ): Promise<RawMessage<ZaileysRaw>> {
     const card = extractCard(message)
     if (card) return this.sendCard(jid, threadId, card, message, quoted)
@@ -548,7 +548,7 @@ export class ZaileysAdapter implements Adapter<ZaileysThreadId, ZaileysRaw> {
     threadId: string,
     card: CardElement,
     message: AdapterPostableMessage,
-    quoted?: WAMessageKey,
+    quoted?: WAMessage,
   ): Promise<RawMessage<ZaileysRaw>> {
     const buttons = this.collectCardButtons(card)
     const fallback =
@@ -608,7 +608,7 @@ export class ZaileysAdapter implements Adapter<ZaileysThreadId, ZaileysRaw> {
     mimeType: string | undefined,
     fileName: string | undefined,
     caption: string | undefined,
-    quoted?: WAMessageKey,
+    quoted?: WAMessage,
   ): Promise<WAMessageKey> {
     const mime = mimeType ?? ''
     return this.sendBuilt(
@@ -630,7 +630,7 @@ export class ZaileysAdapter implements Adapter<ZaileysThreadId, ZaileysRaw> {
   private async sendBuilt(
     jid: string,
     build: (b: MessageBuilder<'init'>) => MessageBuilder<'content-set'>,
-    quoted?: WAMessageKey,
+    quoted?: WAMessage,
   ): Promise<WAMessageKey> {
     let builder = build(this._client.send(jid))
     if (quoted !== undefined) builder = builder.reply(quoted)
@@ -897,15 +897,30 @@ export class ZaileysAdapter implements Adapter<ZaileysThreadId, ZaileysRaw> {
     return this._client.send(jid)
   }
 
-  /** Send a quoted reply — WhatsApp's native reply bubble. */
+  /**
+   * Send a quoted reply — WhatsApp's native reply bubble. Falls back to an
+   * unquoted send when the original message content can't be resolved.
+   */
   async reply(
     message: Message<ZaileysRaw> | Message<unknown>,
     content: AdapterPostableMessage,
   ): Promise<RawMessage<ZaileysRaw>> {
     const raw = message.raw as ZaileysRaw | undefined
-    const key = raw?.key ?? { remoteJid: this.decodeThreadId(message.threadId).jid, id: message.id, fromMe: false }
     const { jid } = this.decodeThreadId(message.threadId)
-    return this.sendPostable(jid, message.threadId, content, key)
+    // baileys needs the full WAMessage (with .message content) to build the quote
+    let quoted: WAMessage | undefined = raw?.message
+    if (quoted?.message == null) {
+      const candidates: WAMessageKey[] = [
+        ...(raw?.key != null ? [raw.key] : []),
+        { remoteJid: jid, id: message.id, fromMe: false },
+        { remoteJid: jid, id: message.id, fromMe: true },
+      ]
+      for (const key of candidates) {
+        quoted = await this._client.store.getMessage(key).catch(() => undefined)
+        if (quoted?.message != null) break
+      }
+    }
+    return this.sendPostable(jid, message.threadId, content, quoted?.message != null ? quoted : undefined)
   }
 
   /** Mark the chat as read (blue ticks). */
