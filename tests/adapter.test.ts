@@ -185,3 +185,28 @@ describe('zaileysContext', () => {
     expect(zaileysContext(lite)).toBeNull()
   })
 })
+
+type ChatLike = Parameters<ZaileysAdapter['initialize']>[0]
+
+describe('reaction dispatch', () => {
+  it('attaches the adapter to reaction events', async () => {
+    const handlers = new Map<string, (payload: unknown) => void>()
+    const a = adapter({ on: (event: string, handler: (payload: unknown) => void) => handlers.set(event, handler) })
+    const calls: Parameters<ChatLike['processReaction']>[0][] = []
+    const chat = {
+      getLogger: () => ({ debug: () => {}, info: () => {}, warn: () => {}, error: () => {} }),
+      processReaction: (event: Parameters<ChatLike['processReaction']>[0]) => calls.push(event),
+    } as unknown as ChatLike
+    await a.initialize(chat)
+
+    handlers.get('reaction')?.({
+      key: { remoteJid: '628111@s.whatsapp.net', id: 'R1' },
+      emoji: '👍',
+      sender: { jid: '628999@s.whatsapp.net', pushName: 'Reactor', isMe: false },
+    })
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.adapter).toBe(a)
+    expect(calls[0]).toMatchObject({ added: true, rawEmoji: '👍' })
+  })
+})

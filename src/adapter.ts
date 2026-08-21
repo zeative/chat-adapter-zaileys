@@ -231,6 +231,7 @@ export class ZaileysAdapter implements Adapter<ZaileysThreadId, ZaileysRaw> {
       void chat.processReaction(
         {
           added: payload.emoji != null,
+          adapter: this,
           emoji: defaultEmojiResolver.fromGChat(payload.emoji ?? ''),
           messageId: payload.key.id ?? '',
           raw: payload,
